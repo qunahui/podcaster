@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --body-bg-color: 246 246 246;
+  --body-color: var(--cl8);
+  --body-line-height: 1.42857143;
+  --h1: 36px;
+  --h2: 30px;
+  --h3: 24px;
+  --h4: 20px;
+  --h5: 18px;
+  --h6: 16px;
+
+  --cl2: 45 46 50;
+  --cl3: 245 34 45;
+  --cl4: 130 130 130;
+  --cl5: 189 189 189;
+  --cl6: 224 224 224;
+  --cl8: 55 55 55;
+  --cl9: 230 230 230;
+  --cl16: 0 0 0;
+
+  --warning-color: 250 173 20;
+  --error-color: 245 34 45;
+
+  /* BASE */
+  --primary-color: 2 145 71;
+
+  --cl1: 2 145 71;
+  --cl7: 10 146 60;
+  --cl10: 7 149 33;
+  --cl11: 2 145 71;
+  --cl12: 20 124 65;
+  --cl13: 76 175 80;
+  --cl15: 2 145 71;
+  --cl17: 213 232 220;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

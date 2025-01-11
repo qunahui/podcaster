@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Video {
+  id                      Int       @id @default(autoincrement())
+  youtubeVideoId          String    @unique
+  processedIndexCharacter Int      @default(0)
+
+  segments                Segment[]
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@map("videos")
+}
+
+model Segment {
+  id        Int      @id @default(autoincrement())
+  
+  videoId   Int
+  video     Video    @relation(fields: [videoId], references: [id])
+  
+  startTime Float
+  endTime   Float  
+  url       String
+
+  transcript              String    @db.Text
+  isProcessed             Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([videoId])
+  @@map("segments")
+}
+
+model YoutubeTranscript {
+  id        Int      @id @default(autoincrement())
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("youtube_transcripts")
+}
