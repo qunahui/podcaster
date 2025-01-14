@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma';
 import { translateTranscript } from '@/lib/tts';
+import { getAudioDuration } from '@/lib/audio';
 import { getYoutubeId } from '@/utils/getYoutubeId';
 import { NextRequest, NextResponse } from 'next/server';
 import { YoutubeTranscript } from 'youtube-transcript';
@@ -46,6 +47,17 @@ const splitText = (text: string, maxBytes: number = 480): string[] => {
 
   return chunks;
 };
+
+const generateM3U8 = (segments: Array<{ url: string; startTime: number; endTime: number }>): string => {
+  let m3u8Content = '#EXTM3U\n';
+  segments.forEach((seg) => {
+    const duration = seg.endTime - seg.startTime;
+    m3u8Content += `#EXTINF:${duration.toFixed(2)},\n`;
+    m3u8Content += `${seg.url}\n`;
+  });
+  m3u8Content += '#EXT-X-ENDLIST\n';
+  return m3u8Content;
+}
 
 export const POST = async (req: NextRequest) => {
   const { url } = await req.json();
