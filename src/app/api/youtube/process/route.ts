@@ -1,7 +1,8 @@
 import prisma from '@/lib/prisma';
-import { translateTranscript } from '@/lib/tts';
+import { translateTranscript, synthesize_segment } from '@/lib/tts';
 import { getAudioDuration } from '@/lib/audio';
 import { getYoutubeId } from '@/utils/getYoutubeId';
+import { makePublicityGoogleCloudURL } from '@/utils/getPublicictyURL';
 import { NextRequest, NextResponse } from 'next/server';
 import { YoutubeTranscript } from 'youtube-transcript';
 
@@ -59,6 +60,8 @@ const generateM3U8 = (segments: Array<{ url: string; startTime: number; endTime:
   return m3u8Content;
 }
 
+
+
 export const POST = async (req: NextRequest) => {
   const { url } = await req.json();
 
@@ -70,7 +73,8 @@ export const POST = async (req: NextRequest) => {
   }
 
   try {
-    const video = await prisma.video.findUnique({
+    //change const to let to change the value later
+    let video = await prisma.video.findUnique({
       where: { youtubeVideoId: getYoutubeId(url) },
       include: {
         segments: true,
@@ -102,24 +106,95 @@ export const POST = async (req: NextRequest) => {
         },
       });
 
-      return NextResponse.json(
-        {
-          transcript: createdVideo.segments
-            .map((segment) => segment.transcript)
-            .join(' '),
-        },
-        { status: 200 }
-      );
+      // return NextResponse.json(
+      //   {
+      //     transcript: createdVideo.segments
+      //       .map((segment) => segment.transcript)
+      //       .join(' '),
+      //   },
+      //   { status: 200 }
+      // );
+
+      // Now treat it the same as an "existing" video
+      video = createdVideo;
     }
 
-    return NextResponse.json(
-      {
-        transcript: video.segments
-          .map((segment) => segment.transcript)
-          .join(' '),
-      },
-      { status: 200 }
-    );
+    // ----------------------------------------------------
+    // From here on, we have a valid `video` record
+    // ----------------------------------------------------
+
+    // Re-fetch segments to ensure we have the latest data
+    // (or we could use video.segments if we included them above)
+    const segments = await prisma.segment.findMany({
+      where: { videoId: video.id },
+      orderBy: { id: 'asc' },
+    });
+    // Filter processed
+    const processedSegments = segments.filter((seg) => seg.isProcessed);
+    console.log(processedSegments)
+
+    // If none processed, let's TTS the first TOP_FIRST_SEGMENT = 5
+    const TOP_FIRST_SEGMENT = 5
+    if (processedSegments.length < TOP_FIRST_SEGMENT) {
+      const firstFive = segments.slice(processedSegments.length, TOP_FIRST_SEGMENT);
+      let currentTime = 0;
+
+      for (const seg of firstFive) {
+        // Synthesize => get GCS URL
+        const audioUrl = await synthesize_segment(seg.transcript, seg.id.toString());
+
+        const publicityAudioURL = makePublicityGoogleCloudURL(audioUrl)
+        // Measure duration
+        const duration = await getAudioDuration(publicityAudioURL);
+
+        // Update DB
+        await prisma.segment.update({
+          where: { id: seg.id },
+          data: {
+            url: publicityAudioURL,
+            isProcessed: true,
+            startTime: currentTime,
+            endTime: currentTime + duration,
+          },
+        });
+
+        currentTime += duration;
+      }
+    }
+
+    // Now gather processed segments again
+    const updatedProcessedSegments = await prisma.segment.findMany({
+      where: { videoId: video.id, isProcessed: true },
+      orderBy: { id: 'asc' },
+    });
+
+    console.log(updatedProcessedSegments)
+
+    // Build M3U8 if we have any processed segments
+    let m3u8Snippet = '';
+    if (updatedProcessedSegments.length > 0) {
+      m3u8Snippet = generateM3U8(updatedProcessedSegments);
+      console.log('Generated M3U8:\n', m3u8Snippet);
+    }
+
+    // Return combined transcripts (only from processed ones?) + M3U8 snippet
+    const combinedTranscript = updatedProcessedSegments
+      .map((s) => s.transcript)
+      .join(' ');
+
+    return NextResponse.json({
+      transcript: combinedTranscript,
+      m3u8Snippet: m3u8Snippet || 'No processed segments yet',
+    });
+
+    // return NextResponse.json(
+    //   {
+    //     transcript: video.segments
+    //       .map((segment) => segment.transcript)
+    //       .join(' '),
+    //   },
+    //   { status: 200 }
+    // );
   } catch (e: unknown) {
     console.log('======> ', e);
     return NextResponse.json(
