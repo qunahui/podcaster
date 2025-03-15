@@ -24,32 +24,67 @@ export const synthesize_segment = async (text: string, segmentid: string) => {
     console.log('Synthesizing text:', text);
     console.log('Segment ID:', segmentid);
 
-    const response = await fetch(
-      'https://asia-northeast1-starry-compiler-439208-m6.cloudfunctions.net/synthesize_speech_function',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: text,
-          audio_name: segmentid,
-        }),
+    // Add retry logic
+    const maxRetries = 3;
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(
+          'https://asia-northeast1-starry-compiler-439208-m6.cloudfunctions.net/synthesize_speech_function',
+          {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              // Add authentication if needed:
+              // 'Authorization': `Bearer ${process.env.CLOUD_FUNCTION_KEY}`,
+            },
+            body: JSON.stringify({
+              text: text,
+              audio_name: segmentid,
+            }),
+          }
+        );
+
+        // Log the full response for debugging
+        const responseText = await response.text();
+        console.log(`Attempt ${attempt} response:`, {
+          status: response.status,
+          statusText: response.statusText,
+          body: responseText
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} - ${responseText}`);
+        }
+
+        // Try to parse the response as JSON
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (e) {
+          throw new Error(`Invalid JSON response: ${responseText}`);
+        }
+
+        if (!data?.audio_url) {
+          throw new Error('No audio_url found in the response');
+        }
+
+        return data.audio_url;
+      } catch (error) {
+        console.error(`Attempt ${attempt} failed:`, error);
+        lastError = error;
+        
+        // If this isn't our last attempt, wait before retrying
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          continue;
+        }
+        throw error;
       }
-    );
-
-    if (!response.ok) {
-      // Not a 2xx status; read text to see the error message (likely HTML)
-      const errorText = await response.text();
-      console.error('Cloud Function returned error:', errorText);
-      throw new Error(`Cloud Function error: HTTP ${response.status} - ${errorText}`);
     }
 
-    // If we get here, it's a 2xx success, so parse JSON
-    const data = await response.json();
-    if (!data?.audio_url) {
-      throw new Error('No audio_url found in the JSON response.');
-    }
-
-    return data.audio_url;
+    throw lastError;
   } catch (error) {
     console.error('Error synthesize segment:', error);
     throw error;
