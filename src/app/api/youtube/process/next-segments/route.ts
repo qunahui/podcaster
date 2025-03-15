@@ -7,14 +7,48 @@ import { makePublicityGoogleCloudURL } from '@/utils/getPublicictyURL';
 
 const DEBUG_PREFIX = '🎵 [NEXT-SEGMENTS]';
 
-const generateM3U8 = (segments: Array<{ url: string; startTime: number; endTime: number }>): string => {
+// Helper function to convert segment to proxied URL
+function getProxiedUrl(segment: { url: string; id: number }): string {
+  // Ensure we have a full URL with domain
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || '';
+  
+  // For server-side, we need to use an absolute URL
+  // In Next.js API routes, we're always on the server side
+  const host = process.env.VERCEL_URL || process.env.HOST || 'localhost:3000';
+  const protocol = host.startsWith('localhost') ? 'http' : 'https';
+  const fullBaseUrl = baseUrl || `${protocol}://${host}`;
+  
+  // Use segment ID instead of direct URL to ensure we always go through the proxy
+  return `${fullBaseUrl}/api/youtube/audio-proxy?segmentId=${segment.id}`;
+}
+
+const generateM3U8 = (
+  segments: Array<{ id: number; url: string; startTime: number; endTime: number }>,
+  allSegmentsProcessed: boolean = false
+): string => {
   let m3u8Content = '#EXTM3U\n';
+  m3u8Content += '#EXT-X-VERSION:3\n';
+  m3u8Content += '#EXT-X-ALLOW-CACHE:NO\n'; // Prevent caching
+  m3u8Content += '#EXT-X-PLAYLIST-TYPE:EVENT\n'; // Allow updates
+  m3u8Content += '#EXT-X-TARGETDURATION:30\n';
+  m3u8Content += '#EXT-X-MEDIA-SEQUENCE:0\n';
+  
   segments.forEach((seg) => {
     const duration = seg.endTime - seg.startTime;
+    const proxiedUrl = getProxiedUrl({
+      url: seg.url,
+      id: seg.id
+    });
+    
     m3u8Content += `#EXTINF:${duration.toFixed(2)},\n`;
-    m3u8Content += `${seg.url}\n`;
+    m3u8Content += `${proxiedUrl}\n`;
   });
-  m3u8Content += '#EXT-X-ENDLIST\n';
+  
+  // Only add ENDLIST if all segments are processed
+  if (allSegmentsProcessed) {
+    m3u8Content += '#EXT-X-ENDLIST\n';
+  }
+  
   return m3u8Content;
 }
 
@@ -47,8 +81,39 @@ export async function POST(request: Request) {
     });
 
     if (!video) {
-      console.error(`${DEBUG_PREFIX} Video not found:`, youtubeId);
-      return new NextResponse('Video not found', { status: 404 });
+      console.error(`${DEBUG_PREFIX} Video not found, triggering initial processing:`, youtubeId);
+      
+      // Instead of returning 404, trigger initial processing
+      try {
+        // Call the process endpoint to create and start processing the video
+        const processResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/youtube/process`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ url: videoId }),
+        });
+        
+        if (!processResponse.ok) {
+          throw new Error(`Failed to process video: ${processResponse.statusText}`);
+        }
+        
+        const processResult = await processResponse.json();
+        
+        return new NextResponse(JSON.stringify({
+          success: true,
+          message: 'Video created and initial segments processed',
+          initialProcessing: true,
+          processResult
+        }), {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+      } catch (error) {
+        console.error(`${DEBUG_PREFIX} Error triggering initial processing:`, error);
+        return new NextResponse('Video not found and processing failed', { status: 500 });
+      }
     }
 
     // Get all segments and filter processed ones
@@ -111,13 +176,34 @@ export async function POST(request: Request) {
       }
     });
 
+    // Check if all segments are processed
+    const totalSegmentsCount = await prisma.segment.count({
+      where: { videoId: video.id }
+    });
+    
+    const allSegmentsProcessed = updatedProcessedSegments.length === totalSegmentsCount;
+    
     // Generate new M3U8 with all processed segments
-    const m3u8Content = generateM3U8(updatedProcessedSegments);
+    const m3u8Content = generateM3U8(updatedProcessedSegments, allSegmentsProcessed);
+
+    // If all segments are processed, update the video's processedIndexCharacter to indicate completion
+    if (allSegmentsProcessed && updatedProcessedSegments.length > 0) {
+      await prisma.video.update({
+        where: { id: video.id },
+        data: {
+          processedIndexCharacter: totalSegmentsCount
+        }
+      });
+      
+      console.log(`${DEBUG_PREFIX} All segments processed, updated video status`);
+    }
 
     return new NextResponse(JSON.stringify({
       success: true,
       message: `Processed ${nextSegmentsToProcess.length} segments`,
       processedSegments: updatedProcessedSegments.length,
+      totalSegments: totalSegmentsCount,
+      allSegmentsProcessed,
       segments: updatedProcessedSegments,
       m3u8Content
     }), {
