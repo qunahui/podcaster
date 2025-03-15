@@ -1,7 +1,7 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
-import Hls from 'hls.js';
 import { fetchJson } from '@/lib/service';
+import Hls from 'hls.js';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 
 interface Segment {
@@ -40,7 +40,9 @@ export default function YouTubeTranslatorPage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [availableSegments, setAvailableSegments] = useState<Segment[]>([]);
   const [isAudioReady, setIsAudioReady] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState<'idle' | 'processing' | 'ready' | 'error'>('idle');
+  const [processingStatus, setProcessingStatus] = useState<
+    'idle' | 'processing' | 'ready' | 'error'
+  >('idle');
   const [isProcessing, setIsProcessing] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -54,7 +56,7 @@ export default function YouTubeTranslatorPage() {
   useEffect(() => {
     console.log(`${DEBUG_PREFIX} Audio element reference:`, {
       exists: !!audioRef.current,
-      element: audioRef.current
+      element: audioRef.current,
     });
   }, [audioRef.current]);
 
@@ -62,7 +64,7 @@ export default function YouTubeTranslatorPage() {
     console.log(`${DEBUG_PREFIX} initializeHls called with:`, {
       url: youtubeUrl,
       audioRef: !!audioRef.current,
-      audioElement: audioRef.current
+      audioElement: audioRef.current,
     });
 
     if (!youtubeUrl) {
@@ -71,7 +73,9 @@ export default function YouTubeTranslatorPage() {
     }
 
     if (!audioRef.current) {
-      console.log(`${DEBUG_PREFIX} Audio element not initialized, creating new one`);
+      console.log(
+        `${DEBUG_PREFIX} Audio element not initialized, creating new one`
+      );
       const audio = new Audio();
       audio.controls = false;
       audioRef.current = audio;
@@ -87,23 +91,30 @@ export default function YouTubeTranslatorPage() {
 
       console.log(`${DEBUG_PREFIX} Checking for available segments...`);
       // Check if we have any processed segments first
-      const segmentsResponse = await fetchJson('/api/youtube/segments/available', {
-        method: 'POST',
-        body: JSON.stringify({ 
-          videoId: youtubeUrl,
-          timestamp: 0
-        }),
-      }) as SegmentsResponse;
+      const segmentsResponse = (await fetchJson(
+        '/api/youtube/segments/available',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            videoId: youtubeUrl,
+            timestamp: 0,
+          }),
+        }
+      )) as SegmentsResponse;
 
       console.log(`${DEBUG_PREFIX} Segments response:`, segmentsResponse);
 
       if (!segmentsResponse?.segments?.length) {
-        console.log(`${DEBUG_PREFIX} No segments available, setting status to processing`);
+        console.log(
+          `${DEBUG_PREFIX} No segments available, setting status to processing`
+        );
         setProcessingStatus('processing');
         return;
       }
 
-      console.log(`${DEBUG_PREFIX} Found ${segmentsResponse.segments.length} segments, setting status to ready`);
+      console.log(
+        `${DEBUG_PREFIX} Found ${segmentsResponse.segments.length} segments, setting status to ready`
+      );
       setProcessingStatus('ready');
       setAvailableSegments(mapSegments(segmentsResponse.segments));
 
@@ -115,7 +126,7 @@ export default function YouTubeTranslatorPage() {
           manifestLoadingTimeOut: 10000,
           manifestLoadingMaxRetry: 3,
           manifestLoadingRetryDelay: 500,
-          xhrSetup: function(xhr, url) {
+          xhrSetup: function (xhr, url) {
             console.log(`${DEBUG_PREFIX} XHR Setup for URL:`, url);
             // Allow redirects
             xhr.withCredentials = false;
@@ -127,7 +138,7 @@ export default function YouTubeTranslatorPage() {
                 url,
                 status: xhr.status,
                 response: xhr.response,
-                headers: xhr.getAllResponseHeaders()
+                headers: xhr.getAllResponseHeaders(),
               });
             });
             // Log errors
@@ -135,16 +146,16 @@ export default function YouTubeTranslatorPage() {
               console.error(`${DEBUG_PREFIX} XHR Error:`, {
                 url,
                 error: e,
-                status: xhr.status
+                status: xhr.status,
               });
             });
-          }
+          },
         });
 
         // Construct playlist URL
         const playlistUrl = `/api/youtube/playlist?videoId=${encodeURIComponent(youtubeUrl)}`;
         console.log(`${DEBUG_PREFIX} Loading playlist from:`, playlistUrl);
-        
+
         // Add more detailed error handling for loadSource
         try {
           console.log(`${DEBUG_PREFIX} Attempting to load source...`);
@@ -176,26 +187,35 @@ export default function YouTubeTranslatorPage() {
             fatal: data.fatal,
             response: data.response,
             error: data.error,
-            url: data.context?.url
+            url: data.context?.url,
           });
 
           if (data.fatal) {
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
-                console.log(`${DEBUG_PREFIX} Fatal network error, attempting recovery...`);
+                console.log(
+                  `${DEBUG_PREFIX} Fatal network error, attempting recovery...`
+                );
                 if (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR) {
-                  console.log(`${DEBUG_PREFIX} Manifest load error, retrying...`);
+                  console.log(
+                    `${DEBUG_PREFIX} Manifest load error, retrying...`
+                  );
                   setTimeout(() => hls.loadSource(playlistUrl), 1000);
                 } else {
                   hls.startLoad();
                 }
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
-                console.log(`${DEBUG_PREFIX} Fatal media error, attempting recovery...`);
+                console.log(
+                  `${DEBUG_PREFIX} Fatal media error, attempting recovery...`
+                );
                 hls.recoverMediaError();
                 break;
               default:
-                console.log(`${DEBUG_PREFIX} Fatal error, cannot recover:`, data);
+                console.log(
+                  `${DEBUG_PREFIX} Fatal error, cannot recover:`,
+                  data
+                );
                 hls.destroy();
                 setProcessingStatus('error');
                 toast.error('Failed to load audio. Please try again.');
@@ -209,7 +229,7 @@ export default function YouTubeTranslatorPage() {
           console.log(`${DEBUG_PREFIX} Fragment loading:`, {
             event,
             data,
-            url: data.frag?.url
+            url: data.frag?.url,
           });
         });
 
@@ -217,7 +237,7 @@ export default function YouTubeTranslatorPage() {
           console.log(`${DEBUG_PREFIX} Fragment loaded successfully:`, {
             event,
             data,
-            url: data.frag?.url
+            url: data.frag?.url,
           });
         });
 
@@ -230,12 +250,14 @@ export default function YouTubeTranslatorPage() {
           console.log(`${DEBUG_PREFIX} HLS Event: Manifest loaded`, {
             event,
             data,
-            url: data.url
+            url: data.url,
           });
         });
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          console.log(`${DEBUG_PREFIX} HLS Event: Manifest parsed successfully`);
+          console.log(
+            `${DEBUG_PREFIX} HLS Event: Manifest parsed successfully`
+          );
           setIsAudioReady(true);
         });
 
@@ -243,18 +265,19 @@ export default function YouTubeTranslatorPage() {
         hls.on(Hls.Events.AUDIO_TRACK_LOADING, (event, data) => {
           console.log(`${DEBUG_PREFIX} Audio track loading:`, {
             event,
-            data
+            data,
           });
         });
 
         hls.on(Hls.Events.AUDIO_TRACK_LOADED, (event, data) => {
           console.log(`${DEBUG_PREFIX} Audio track loaded:`, {
             event,
-            data
+            data,
           });
         });
-
-      } else if (audioRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+      } else if (
+        audioRef.current.canPlayType('application/vnd.apple.mpegurl')
+      ) {
         console.log(`${DEBUG_PREFIX} Using native HLS support (Safari)`);
         const playlistUrl = `/api/youtube/playlist?videoId=${encodeURIComponent(youtubeUrl)}`;
         audioRef.current.src = playlistUrl;
@@ -284,7 +307,7 @@ export default function YouTubeTranslatorPage() {
       setLoading(true);
       setProcessingStatus('processing');
       setIsAudioReady(false);
-      
+
       console.log(`${DEBUG_PREFIX} Calling process endpoint...`);
       const response = await fetchJson('/api/youtube/process/', {
         method: 'POST',
@@ -309,9 +332,9 @@ export default function YouTubeTranslatorPage() {
 
   // Helper to convert DB segments to frontend format
   const mapSegments = (segments: DBSegment[]): Segment[] => {
-    return segments.map(seg => ({
+    return segments.map((seg) => ({
       start: seg.startTime,
-      end: seg.endTime
+      end: seg.endTime,
     }));
   };
 
@@ -319,52 +342,70 @@ export default function YouTubeTranslatorPage() {
   const processNextSegments = async (timestamp: number) => {
     // If already processing, skip
     if (isProcessing) {
-      console.log(`${DEBUG_PREFIX} Skipping next-segments call, processing in progress`);
+      console.log(
+        `${DEBUG_PREFIX} Skipping next-segments call, processing in progress`
+      );
       return;
     }
 
-    console.log(`${DEBUG_PREFIX} Processing next segments at timestamp:`, timestamp);
+    console.log(
+      `${DEBUG_PREFIX} Processing next segments at timestamp:`,
+      timestamp
+    );
     setIsProcessing(true);
 
     try {
-      const processResponse = await fetchJson('/api/youtube/process/next-segments', {
-        method: 'POST',
-        body: JSON.stringify({
-          videoId: youtubeUrl,
-          currentTimestamp: timestamp,
-          count: 5
-        }),
-      }) as ProcessNextSegmentsResponse;
-      
-      console.log(`${DEBUG_PREFIX} Next segments processing response:`, processResponse);
-      
+      const processResponse = (await fetchJson(
+        '/api/youtube/process/next-segments',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            videoId: youtubeUrl,
+            currentTimestamp: timestamp,
+            count: 5,
+          }),
+        }
+      )) as ProcessNextSegmentsResponse;
+
+      console.log(
+        `${DEBUG_PREFIX} Next segments processing response:`,
+        processResponse
+      );
+
       if (processResponse.m3u8Content) {
-        console.log(`${DEBUG_PREFIX} Received new M3U8 content, updating player...`);
-        
+        console.log(
+          `${DEBUG_PREFIX} Received new M3U8 content, updating player...`
+        );
+
         // Create a Blob with the new M3U8 content
         const blob = new Blob([processResponse.m3u8Content], {
-          type: 'application/vnd.apple.mpegurl'
+          type: 'application/vnd.apple.mpegurl',
         });
         const m3u8Url = URL.createObjectURL(blob);
-        
+
         // Update HLS player with new M3U8
         if (hlsRef.current) {
           console.log(`${DEBUG_PREFIX} Loading new M3U8 URL:`, m3u8Url);
           hlsRef.current.loadSource(m3u8Url);
           hlsRef.current.startLoad();
         }
-        
+
         // Clean up the old URL after a delay
         setTimeout(() => URL.revokeObjectURL(m3u8Url), 1000);
       }
-      
+
       // Update available segments with the new processed ones
       if (processResponse.segments) {
         setAvailableSegments(mapSegments(processResponse.segments));
       }
     } catch (processError) {
-      console.error(`${DEBUG_PREFIX} Error processing next segments:`, processError);
-      toast.warning('Failed to load next segments. Playback might be interrupted.');
+      console.error(
+        `${DEBUG_PREFIX} Error processing next segments:`,
+        processError
+      );
+      toast.warning(
+        'Failed to load next segments. Playback might be interrupted.'
+      );
     } finally {
       // Set up cooldown timer
       processingTimeoutRef.current = setTimeout(() => {
@@ -385,28 +426,45 @@ export default function YouTubeTranslatorPage() {
 
   // Check available segments and reinitialize if needed
   const checkAvailableSegments = async (timestamp: number) => {
+    // Prevent excessive API calls by implementing a cooldown
+    const now = Date.now();
+    if (now - lastProcessCallTimeRef.current < PROCESS_INTERVAL) {
+      console.log(`${DEBUG_PREFIX} Skipping segment check due to cooldown`);
+      return;
+    }
+
+    lastProcessCallTimeRef.current = now;
+
     try {
       console.log(`${DEBUG_PREFIX} Checking segments at timestamp:`, timestamp);
-      const response = await fetchJson('/api/youtube/segments/available', {
+      const response = (await fetchJson('/api/youtube/segments/available', {
         method: 'POST',
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           videoId: youtubeUrl,
-          timestamp 
+          timestamp,
         }),
-      }) as SegmentsResponse;
-      
+      })) as SegmentsResponse;
+
       console.log(`${DEBUG_PREFIX} Available segments response:`, response);
-      
+
       if (response?.segments) {
         setAvailableSegments(mapSegments(response.segments));
-        
+
         // Check if we need to process more segments
-        const hasUpcomingSegments = response.segments.some(segment => segment.endTime > timestamp);
+        // Only process next segments if we're near the end of available content
+        const hasUpcomingSegments = response.segments.some(
+          (segment) => segment.endTime > timestamp + 5 // Look ahead 5 seconds
+        );
+
         if (!hasUpcomingSegments && !isProcessing) {
-          console.log(`${DEBUG_PREFIX} No upcoming segments found and not in cooldown, processing next batch...`);
+          console.log(
+            `${DEBUG_PREFIX} No upcoming segments found and not in cooldown, processing next batch...`
+          );
           await processNextSegments(timestamp);
         } else if (!hasUpcomingSegments) {
-          console.log(`${DEBUG_PREFIX} No upcoming segments found but processing is in cooldown`);
+          console.log(
+            `${DEBUG_PREFIX} No upcoming segments found but processing is in cooldown`
+          );
         }
       }
     } catch (error) {
@@ -417,7 +475,7 @@ export default function YouTubeTranslatorPage() {
   // Poll for segments while processing
   useEffect(() => {
     let pollInterval: NodeJS.Timeout;
-    
+
     if (processingStatus === 'processing') {
       console.log(`${DEBUG_PREFIX} Starting segment polling...`);
       pollInterval = setInterval(() => {
@@ -439,22 +497,46 @@ export default function YouTubeTranslatorPage() {
     if (audioRef.current) {
       const newTime = audioRef.current.currentTime;
       setCurrentTime(newTime);
-      checkAvailableSegments(newTime);
+
+      // Check if we're near the end of any available segment
+      const isNearEndOfSegment = availableSegments.some(
+        (segment) => newTime >= segment.end - 1 && newTime <= segment.end
+      );
+
+      // Only check for new segments if we're near the end of a segment
+      if (isNearEndOfSegment) {
+        console.log(
+          `${DEBUG_PREFIX} Near end of segment, checking for more segments`
+        );
+        checkAvailableSegments(newTime);
+      }
     }
   };
 
   // Custom play/pause handler
   const handlePlayPause = () => {
     if (audioRef.current) {
+      console.log(
+        `${DEBUG_PREFIX} Play/Pause button clicked, current state:`,
+        isPlaying
+      );
+
       if (isPlaying) {
         audioRef.current.pause();
+        setIsPlaying(false);
       } else {
-        audioRef.current.play().catch(error => {
-          console.error('Playback failed:', error);
-          toast.error('Playback failed. Please try again.');
-        });
+        // First update state, then play to avoid race conditions
+        setIsPlaying(true);
+
+        // Use setTimeout to ensure state update completes before playing
+        setTimeout(() => {
+          audioRef.current?.play().catch((error) => {
+            console.error(`${DEBUG_PREFIX} Playback failed:`, error);
+            toast.error('Playback failed. Please try again.');
+            setIsPlaying(false);
+          });
+        }, 50);
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
@@ -464,9 +546,9 @@ export default function YouTubeTranslatorPage() {
       const newTime = audioRef.current.currentTime + seconds;
       // Check if seeking is within available segments
       const isAvailable = availableSegments.some(
-        segment => newTime >= segment.start && newTime <= segment.end
+        (segment) => newTime >= segment.start && newTime <= segment.end
       );
-      
+
       if (isAvailable) {
         audioRef.current.currentTime = newTime;
         setCurrentTime(newTime);
@@ -491,8 +573,19 @@ export default function YouTubeTranslatorPage() {
       <audio
         ref={audioRef}
         onTimeUpdate={handleTimeUpdate}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
+        onPlay={() => {
+          console.log(`${DEBUG_PREFIX} Audio play event triggered`);
+          setIsPlaying(true);
+        }}
+        onPause={() => {
+          console.log(`${DEBUG_PREFIX} Audio pause event triggered`);
+          setIsPlaying(false);
+        }}
+        onError={(e) => {
+          console.error(`${DEBUG_PREFIX} Audio error:`, e);
+          toast.error('Audio playback error occurred');
+          setIsPlaying(false);
+        }}
         style={{ display: 'none' }}
       />
 
@@ -530,7 +623,7 @@ export default function YouTubeTranslatorPage() {
       {processingStatus !== 'idle' && (
         <div className="mt-8">
           <h2 className="text-xl font-semibold mb-4">Audio Player</h2>
-          
+
           {processingStatus === 'processing' && (
             <div className="bg-yellow-50 p-4 rounded-lg mb-4">
               <p className="text-yellow-700">
@@ -546,7 +639,7 @@ export default function YouTubeTranslatorPage() {
               </p>
             </div>
           )}
-          
+
           {processingStatus === 'ready' && (
             <>
               {/* Custom player controls */}
