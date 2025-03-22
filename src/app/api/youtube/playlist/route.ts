@@ -94,7 +94,12 @@ export async function GET(request: Request) {
     m3u8Content += '#EXT-X-ALLOW-CACHE:NO\n'; // Changed to NO to prevent caching
     m3u8Content += '#EXT-X-PLAYLIST-TYPE:EVENT\n'; // Changed to EVENT to allow updates
     m3u8Content += '#EXT-X-TARGETDURATION:30\n';
-    m3u8Content += '#EXT-X-MEDIA-SEQUENCE:0\n';
+    // Use the first segment's ID as the media sequence number
+    if (video.segments.length > 0) {
+      m3u8Content += `#EXT-X-MEDIA-SEQUENCE:${video.segments[0].id}\n`;
+    } else {
+      m3u8Content += '#EXT-X-MEDIA-SEQUENCE:0\n';
+    }
 
     video.segments.forEach((segment) => {
       const duration = segment.endTime - segment.startTime;

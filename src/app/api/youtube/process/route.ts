@@ -49,8 +49,11 @@ const splitText = (text: string, maxBytes: number = 480): string[] => {
   return chunks;
 };
 
-const generateM3U8 = (segments: Array<{ url: string; startTime: number; endTime: number }>): string => {
+const generateM3U8 = (segments: Array<{ id: number; url: string; startTime: number; endTime: number }>): string => {
   let m3u8Content = '#EXTM3U\n';
+  if (segments.length > 0) {
+    m3u8Content += `#EXT-X-MEDIA-SEQUENCE:${segments[0].id}\n`;
+  }
   segments.forEach((seg) => {
     const duration = seg.endTime - seg.startTime;
     m3u8Content += `#EXTINF:${duration.toFixed(2)},\n`;
@@ -146,6 +149,11 @@ export const POST = async (req: NextRequest) => {
         const publicityAudioURL = makePublicityGoogleCloudURL(audioUrl)
         // Measure duration
         const duration = await getAudioDuration(publicityAudioURL);
+
+        console.log('seg', seg)
+        console.log('currentTime', currentTime)
+        console.log('duration', duration)
+        
 
         // Update DB
         await prisma.segment.update({

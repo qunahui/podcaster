@@ -1,5 +1,6 @@
 'use client';
 import { fetchJson } from '@/lib/service';
+import { getYoutubeId } from '@/utils/getYoutubeId';
 import Hls from 'hls.js';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
@@ -120,13 +121,9 @@ export default function YouTubeTranslatorPage() {
 
       if (Hls.isSupported()) {
         console.log(`${DEBUG_PREFIX} HLS is supported by browser`);
-        // Create a reference to track if this is the initial load
-        const initialLoadRef = { value: true };
-        
         const hls = new Hls({
           debug: true,
           enableWorker: true,
-          startPosition: 0, // Force start at the beginning of the playlist
           manifestLoadingTimeOut: 10000,
           manifestLoadingMaxRetry: 3,
           manifestLoadingRetryDelay: 500,
@@ -258,33 +255,6 @@ export default function YouTubeTranslatorPage() {
           });
         });
 
-        // Add fragment change handler to track which fragments are being played
-        hls.on(Hls.Events.FRAG_CHANGED, (event, data) => {
-          console.log(`${DEBUG_PREFIX} Fragment changed:`, {
-            sn: data.frag.sn, // Sequence number
-            start: data.frag.start,
-            url: data.frag.url,
-            level: data.frag.level
-          });
-        });
-
-        // Add level loading handler to better control starting position
-        hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
-          console.log(`${DEBUG_PREFIX} Level loaded:`, {
-            details: data.details,
-            id: data.level,
-            startSN: data.details.startSN,
-            endSN: data.details.endSN
-          });
-          
-          // Force start at the first segment if this is the initial load
-          if (initialLoadRef.value && audioRef.current) {
-            initialLoadRef.value = false;
-            console.log(`${DEBUG_PREFIX} Initial load - forcing start position to 0`);
-            audioRef.current.currentTime = 0;
-          }
-        });
-
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           console.log(
             `${DEBUG_PREFIX} HLS Event: Manifest parsed successfully`
@@ -327,9 +297,11 @@ export default function YouTubeTranslatorPage() {
 
   const handleSubmit = async () => {
     console.log(`${DEBUG_PREFIX} handleSubmit called with URL:`, youtubeUrl);
-    if (!youtubeUrl.trim()) {
-      console.log(`${DEBUG_PREFIX} Empty URL provided`);
-      toast.error('Please enter a valid YouTube URL');
+    const videoId = getYoutubeId(youtubeUrl);
+    
+    if (!videoId) {
+      console.log(`${DEBUG_PREFIX} Invalid YouTube URL format`);
+      toast.error('Please enter a valid YouTube URL or video ID');
       return;
     }
 
@@ -340,9 +312,12 @@ export default function YouTubeTranslatorPage() {
       setIsAudioReady(false);
 
       console.log(`${DEBUG_PREFIX} Calling process endpoint...`);
-      const response = await fetchJson('/api/youtube/process/', {
+      const response = await fetchJson('/api/youtube/process', {
         method: 'POST',
-        body: JSON.stringify({ url: youtubeUrl }),
+        body: JSON.stringify({
+          videoId: getYoutubeId(youtubeUrl) || '',
+          url: youtubeUrl
+        }),
       });
 
       console.log(`${DEBUG_PREFIX} Process response:`, response);
@@ -379,10 +354,17 @@ export default function YouTubeTranslatorPage() {
       return;
     }
 
+    // Don't proceed if URL is empty
+    if (!youtubeUrl.trim()) {
+      console.log(`${DEBUG_PREFIX} Skipping next-segments call - empty URL`);
+      return;
+    }
+
     console.log(
       `${DEBUG_PREFIX} Processing next segments at timestamp:`,
       timestamp
     );
+    console.log(`${DEBUG_PREFIX} Using video URL:`, youtubeUrl);
     setIsProcessing(true);
 
     try {
@@ -414,36 +396,10 @@ export default function YouTubeTranslatorPage() {
         });
         const m3u8Url = URL.createObjectURL(blob);
 
-        // Update HLS player with new M3U8 while preserving playback position
-        if (hlsRef.current && audioRef.current) {
-          // Store current playback position and state
-          const currentTime = audioRef.current.currentTime || 0;
-          const wasPlaying = !audioRef.current.paused;
-          
-          console.log(`${DEBUG_PREFIX} Loading new M3U8 URL:`, m3u8Url, {
-            currentTime,
-            wasPlaying
-          });
-          
-          // Load the new source
+        // Update HLS player with new M3U8
+        if (hlsRef.current) {
+          console.log(`${DEBUG_PREFIX} Loading new M3U8 URL:`, m3u8Url);
           hlsRef.current.loadSource(m3u8Url);
-          
-          // After manifest is parsed, seek to the previous position and restore playback state
-          hlsRef.current.once(Hls.Events.MANIFEST_PARSED, () => {
-            console.log(`${DEBUG_PREFIX} New manifest parsed, restoring position to:`, currentTime);
-            if (audioRef.current) {
-              audioRef.current.currentTime = currentTime;
-              
-              // Restore playback state if it was playing
-              if (wasPlaying) {
-                console.log(`${DEBUG_PREFIX} Restoring playback state to playing`);
-                audioRef.current.play().catch(error => {
-                  console.error(`${DEBUG_PREFIX} Error restoring playback:`, error);
-                });
-              }
-            }
-          });
-          
           hlsRef.current.startLoad();
         }
 
@@ -490,10 +446,17 @@ export default function YouTubeTranslatorPage() {
       return;
     }
 
+    // Don't proceed if URL is empty
+    if (!youtubeUrl.trim()) {
+      console.log(`${DEBUG_PREFIX} Skipping segment check - empty URL`);
+      return;
+    }
+
     lastProcessCallTimeRef.current = now;
 
     try {
       console.log(`${DEBUG_PREFIX} Checking segments at timestamp:`, timestamp);
+      console.log(`${DEBUG_PREFIX} Using video URL:`, youtubeUrl);
       const response = (await fetchJson('/api/youtube/segments/available', {
         method: 'POST',
         body: JSON.stringify({
@@ -547,7 +510,7 @@ export default function YouTubeTranslatorPage() {
         clearInterval(pollInterval);
       }
     };
-  }, [processingStatus]);
+  }, [processingStatus, youtubeUrl]); // Add youtubeUrl as a dependency
 
   // Handle time update
   const handleTimeUpdate = () => {

@@ -31,7 +31,12 @@ const generateM3U8 = (
   m3u8Content += '#EXT-X-ALLOW-CACHE:NO\n'; // Prevent caching
   m3u8Content += '#EXT-X-PLAYLIST-TYPE:EVENT\n'; // Allow updates
   m3u8Content += '#EXT-X-TARGETDURATION:30\n';
-  m3u8Content += '#EXT-X-MEDIA-SEQUENCE:0\n';
+  // Use the first segment's ID as the media sequence number
+  if (segments.length > 0) {
+    m3u8Content += `#EXT-X-MEDIA-SEQUENCE:${segments[0].id}\n`;
+  } else {
+    m3u8Content += '#EXT-X-MEDIA-SEQUENCE:0\n';
+  }
   
   segments.forEach((seg) => {
     const duration = seg.endTime - seg.startTime;
