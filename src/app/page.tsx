@@ -109,6 +109,9 @@ export default function YouTubeTranslatorPage() {
           `${DEBUG_PREFIX} No segments available, setting status to processing`
         );
         setProcessingStatus('processing');
+
+        // Start polling for segments immediately
+        checkAvailableSegments(0);
         return;
       }
 
@@ -122,7 +125,7 @@ export default function YouTubeTranslatorPage() {
         console.log(`${DEBUG_PREFIX} HLS is supported by browser`);
         // Create a reference to track if this is the initial load
         const initialLoadRef = { value: true };
-        
+
         const hls = new Hls({
           debug: true,
           enableWorker: true,
@@ -130,6 +133,12 @@ export default function YouTubeTranslatorPage() {
           manifestLoadingTimeOut: 10000,
           manifestLoadingMaxRetry: 3,
           manifestLoadingRetryDelay: 500,
+          // Add proper seeking capabilities by enabling accurate seeking
+          liveSyncDuration: 0,
+          liveMaxLatencyDuration: Infinity,
+          liveDurationInfinity: true,
+          // Enable lowLatency mode to improve seeking
+          lowLatencyMode: true,
           xhrSetup: function (xhr, url) {
             console.log(`${DEBUG_PREFIX} XHR Setup for URL:`, url);
             // Allow redirects
@@ -157,7 +166,7 @@ export default function YouTubeTranslatorPage() {
         });
 
         // Construct playlist URL
-        const playlistUrl = `/api/youtube/playlist?videoId=${encodeURIComponent(youtubeUrl)}`;
+        const playlistUrl = `/api/youtube/playlist?videoId=${encodeURIComponent(youtubeUrl)}&t=${Date.now()}`;
         console.log(`${DEBUG_PREFIX} Loading playlist from:`, playlistUrl);
 
         // Add more detailed error handling for loadSource
@@ -228,60 +237,17 @@ export default function YouTubeTranslatorPage() {
           }
         });
 
-        // Add fragment loading error handling
-        hls.on(Hls.Events.FRAG_LOADING, (event, data) => {
-          console.log(`${DEBUG_PREFIX} Fragment loading:`, {
-            event,
-            data,
-            url: data.frag?.url,
-          });
-        });
-
-        hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
-          console.log(`${DEBUG_PREFIX} Fragment loaded successfully:`, {
-            event,
-            data,
-            url: data.frag?.url,
-          });
-        });
-
-        // Add manifest loading handlers
-        hls.on(Hls.Events.MANIFEST_LOADING, () => {
-          console.log(`${DEBUG_PREFIX} HLS Event: Manifest loading`);
-        });
-
+        // Add manifest loaded event to enable seeking
         hls.on(Hls.Events.MANIFEST_LOADED, (event, data) => {
           console.log(`${DEBUG_PREFIX} HLS Event: Manifest loaded`, {
             event,
             data,
             url: data.url,
           });
-        });
 
-        // Add fragment change handler to track which fragments are being played
-        hls.on(Hls.Events.FRAG_CHANGED, (event, data) => {
-          console.log(`${DEBUG_PREFIX} Fragment changed:`, {
-            sn: data.frag.sn, // Sequence number
-            start: data.frag.start,
-            url: data.frag.url,
-            level: data.frag.level
-          });
-        });
-
-        // Add level loading handler to better control starting position
-        hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
-          console.log(`${DEBUG_PREFIX} Level loaded:`, {
-            details: data.details,
-            id: data.level,
-            startSN: data.details.startSN,
-            endSN: data.details.endSN
-          });
-          
-          // Force start at the first segment if this is the initial load
-          if (initialLoadRef.value && audioRef.current) {
-            initialLoadRef.value = false;
-            console.log(`${DEBUG_PREFIX} Initial load - forcing start position to 0`);
-            audioRef.current.currentTime = 0;
+          // Enable seeking now that we have a manifest
+          if (audioRef.current) {
+            audioRef.current.seekable = true;
           }
         });
 
@@ -290,27 +256,41 @@ export default function YouTubeTranslatorPage() {
             `${DEBUG_PREFIX} HLS Event: Manifest parsed successfully`
           );
           setIsAudioReady(true);
+
+          // Now that the manifest is parsed, mark the audio as ready for seeking
+          if (audioRef.current) {
+            // Force the audio element to update its duration and seekable range
+            setTimeout(() => {
+              if (audioRef.current) {
+                audioRef.current.currentTime = 0;
+              }
+            }, 100);
+          }
         });
 
-        // Add audio track loading handlers
-        hls.on(Hls.Events.AUDIO_TRACK_LOADING, (event, data) => {
-          console.log(`${DEBUG_PREFIX} Audio track loading:`, {
-            event,
-            data,
+        // Add level loaded handler to better control starting position
+        hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
+          console.log(`${DEBUG_PREFIX} Level loaded:`, {
+            details: data.details,
+            id: data.level,
+            startSN: data.details.startSN,
+            endSN: data.details.endSN,
           });
-        });
 
-        hls.on(Hls.Events.AUDIO_TRACK_LOADED, (event, data) => {
-          console.log(`${DEBUG_PREFIX} Audio track loaded:`, {
-            event,
-            data,
-          });
+          // Force start at the first segment if this is the initial load
+          if (initialLoadRef.value && audioRef.current) {
+            initialLoadRef.value = false;
+            console.log(
+              `${DEBUG_PREFIX} Initial load - forcing start position to 0`
+            );
+            audioRef.current.currentTime = 0;
+          }
         });
       } else if (
         audioRef.current.canPlayType('application/vnd.apple.mpegurl')
       ) {
         console.log(`${DEBUG_PREFIX} Using native HLS support (Safari)`);
-        const playlistUrl = `/api/youtube/playlist?videoId=${encodeURIComponent(youtubeUrl)}`;
+        const playlistUrl = `/api/youtube/playlist?videoId=${encodeURIComponent(youtubeUrl)}&t=${Date.now()}`;
         audioRef.current.src = playlistUrl;
         setIsAudioReady(true);
       } else {
@@ -350,7 +330,15 @@ export default function YouTubeTranslatorPage() {
       if (response) {
         setTranscript((response as any).transcript);
         console.log(`${DEBUG_PREFIX} Initializing HLS after processing...`);
+
+        // Don't show success toast until segments are actually available
+        // Instead, wait for HLS initialization to complete
         await initializeHls();
+
+        // Only show success toast if we have segments ready
+        if (processingStatus === 'ready' && availableSegments.length > 0) {
+          toast.success('Translation complete and ready to play');
+        }
       }
     } catch (error) {
       console.error(`${DEBUG_PREFIX} Error in handleSubmit:`, error);
@@ -419,31 +407,39 @@ export default function YouTubeTranslatorPage() {
           // Store current playback position and state
           const currentTime = audioRef.current.currentTime || 0;
           const wasPlaying = !audioRef.current.paused;
-          
+
           console.log(`${DEBUG_PREFIX} Loading new M3U8 URL:`, m3u8Url, {
             currentTime,
-            wasPlaying
+            wasPlaying,
           });
-          
+
           // Load the new source
           hlsRef.current.loadSource(m3u8Url);
-          
+
           // After manifest is parsed, seek to the previous position and restore playback state
           hlsRef.current.once(Hls.Events.MANIFEST_PARSED, () => {
-            console.log(`${DEBUG_PREFIX} New manifest parsed, restoring position to:`, currentTime);
+            console.log(
+              `${DEBUG_PREFIX} New manifest parsed, restoring position to:`,
+              currentTime
+            );
             if (audioRef.current) {
               audioRef.current.currentTime = currentTime;
-              
+
               // Restore playback state if it was playing
               if (wasPlaying) {
-                console.log(`${DEBUG_PREFIX} Restoring playback state to playing`);
-                audioRef.current.play().catch(error => {
-                  console.error(`${DEBUG_PREFIX} Error restoring playback:`, error);
+                console.log(
+                  `${DEBUG_PREFIX} Restoring playback state to playing`
+                );
+                audioRef.current.play().catch((error) => {
+                  console.error(
+                    `${DEBUG_PREFIX} Error restoring playback:`,
+                    error
+                  );
                 });
               }
             }
           });
-          
+
           hlsRef.current.startLoad();
         }
 
@@ -555,12 +551,12 @@ export default function YouTubeTranslatorPage() {
       const newTime = audioRef.current.currentTime;
       setCurrentTime(newTime);
 
-      // Check if we're near the end of any available segment
+      // Check if we're approaching the end of any available segment (within 2 seconds of end)
       const isNearEndOfSegment = availableSegments.some(
-        (segment) => newTime >= segment.end - 1 && newTime <= segment.end
+        (segment) => newTime >= segment.end - 2 && newTime <= segment.end
       );
 
-      // Only check for new segments if we're near the end of a segment
+      // Check if we need more segments
       if (isNearEndOfSegment) {
         console.log(
           `${DEBUG_PREFIX} Near end of segment, checking for more segments`
@@ -600,18 +596,8 @@ export default function YouTubeTranslatorPage() {
   // Custom seek handler
   const skipSeconds = (seconds: number) => {
     if (audioRef.current) {
-      const newTime = audioRef.current.currentTime + seconds;
-      // Check if seeking is within available segments
-      const isAvailable = availableSegments.some(
-        (segment) => newTime >= segment.start && newTime <= segment.end
-      );
-
-      if (isAvailable) {
-        audioRef.current.currentTime = newTime;
-        setCurrentTime(newTime);
-      } else {
-        toast.warning('This segment is not available yet');
-      }
+      const newTime = currentTime + seconds;
+      seekToPosition(newTime);
     }
   };
 
@@ -623,6 +609,60 @@ export default function YouTubeTranslatorPage() {
       }
     };
   }, []);
+
+  // Add these functions to your component
+
+  // Calculate the total duration based on available segments
+  const getMaxDuration = (): number => {
+    if (!availableSegments.length) return 0;
+
+    // Find the segment with the latest end time
+    const lastSegment = availableSegments.reduce((latest, current) => {
+      return current.end > latest.end ? current : latest;
+    }, availableSegments[0]);
+
+    return lastSegment.end;
+  };
+
+  // Handle direct seeking via range input
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    seekToPosition(newTime);
+  };
+
+  // Centralized seek function used by both range slider and skip buttons
+  const seekToPosition = (newTime: number) => {
+    if (!audioRef.current || !isAudioReady) return;
+
+    console.log(`${DEBUG_PREFIX} Attempting to seek to position:`, newTime);
+
+    // Check if seeking is within available segments
+    const isAvailable = availableSegments.some(
+      (segment) => newTime >= segment.start && newTime <= segment.end
+    );
+
+    if (isAvailable) {
+      try {
+        // Set seeking state for the UI
+        setCurrentTime(newTime);
+
+        // Apply the new time to the audio element
+        audioRef.current.currentTime = newTime;
+
+        console.log(`${DEBUG_PREFIX} Successfully seeked to:`, newTime);
+
+        // If HLS instance exists, manually seek there too to ensure sync
+        if (hlsRef.current) {
+          hlsRef.current.trigger(Hls.Events.SEEKING, { targetTime: newTime });
+        }
+      } catch (error) {
+        console.error(`${DEBUG_PREFIX} Error seeking to position:`, error);
+        toast.error('Error while seeking. Please try again.');
+      }
+    } else {
+      toast.warning('Cannot seek to that position - segment not available yet');
+    }
+  };
 
   return (
     <div className="container mx-auto p-4">
@@ -638,11 +678,33 @@ export default function YouTubeTranslatorPage() {
           console.log(`${DEBUG_PREFIX} Audio pause event triggered`);
           setIsPlaying(false);
         }}
+        onSeeking={() => {
+          console.log(`${DEBUG_PREFIX} Audio seeking event triggered`);
+        }}
+        onSeeked={() => {
+          console.log(`${DEBUG_PREFIX} Audio seeked event triggered`);
+          // After seeking completes, ensure we can play from this point
+          if (isPlaying && audioRef.current && audioRef.current.paused) {
+            audioRef.current.play().catch((err) => {
+              console.error(
+                `${DEBUG_PREFIX} Failed to resume after seek:`,
+                err
+              );
+            });
+          }
+        }}
+        onCanPlay={() => {
+          console.log(`${DEBUG_PREFIX} Audio canplay event triggered`);
+          // Mark audio as ready for playback and seeking
+          setIsAudioReady(true);
+        }}
         onError={(e) => {
           console.error(`${DEBUG_PREFIX} Audio error:`, e);
           toast.error('Audio playback error occurred');
           setIsPlaying(false);
         }}
+        preload="auto"
+        controls={false}
         style={{ display: 'none' }}
       />
 
@@ -699,7 +761,6 @@ export default function YouTubeTranslatorPage() {
 
           {processingStatus === 'ready' && (
             <>
-              {/* Custom player controls */}
               <div className="bg-gray-100 p-4 rounded-lg">
                 <div className="flex items-center justify-between mb-4">
                   <button
@@ -712,6 +773,20 @@ export default function YouTubeTranslatorPage() {
                   <span className="text-sm">
                     Current Time: {Math.floor(currentTime)}s
                   </span>
+                </div>
+
+                {/* Add a custom seek bar */}
+                <div className="mb-4">
+                  <input
+                    type="range"
+                    min="0"
+                    max={getMaxDuration()}
+                    value={currentTime}
+                    step="0.1"
+                    onChange={handleSeek}
+                    disabled={!isAudioReady}
+                    className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
+                  />
                 </div>
 
                 <div className="flex gap-4 justify-center">
