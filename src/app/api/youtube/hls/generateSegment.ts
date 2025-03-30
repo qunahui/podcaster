@@ -1,13 +1,16 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
-  findVideoByYoutubeId,
   appendToSegmentTable,
+  findVideoByYoutubeId,
   SegmentRecord,
 } from '../../../lib/database';
 
-let globalSegmentId = 1;
+const globalSegmentId = 1;
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
@@ -26,11 +29,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     // 2) Call /api/youtube/audio-length to measure the MP3
-    const response = await fetch('http://localhost:3000/api/youtube/audio-length', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audioUrl }),
-    });
+    const response = await fetch(
+      'http://localhost:3000/api/youtube/audio-length',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioUrl }),
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -41,7 +47,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 3) Create a new SegmentRecord
     const newSegment: SegmentRecord = {
-      id: globalSegmentId++,
       videoId: videoRecord.id,
       startTime,
       endTime: startTime + duration,

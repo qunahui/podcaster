@@ -12,7 +12,6 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const videoUrl = url.searchParams.get('videoId');
     // Add timestamp to prevent caching
-    const timestamp = url.searchParams.get('t') || Date.now().toString();
     const debug = url.searchParams.get('debug') === 'true';
 
     console.log(`${DEBUG_PREFIX} Video URL:`, videoUrl);

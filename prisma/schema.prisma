@@ -9,7 +9,8 @@ datasource db {
 }
 
 model Video {
-  id                      Int       @id @default(autoincrement())
+  id   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  
   youtubeVideoId          String    @unique
   processedIndexCharacter Int      @default(0)
 
@@ -21,16 +22,16 @@ model Video {
 }
 
 model Segment {
-  id        Int      @id @default(autoincrement())
+  id   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   
-  videoId   Int
+  videoId   String @db.Uuid
   video     Video    @relation(fields: [videoId], references: [id])
   
   startTime Float
   endTime   Float  
   url       String
 
-  transcript              String    @db.Text
+  transcript              String    @db.Uuid
   isProcessed             Boolean   @default(false)
 
   createdAt DateTime @default(now())
@@ -41,7 +42,7 @@ model Segment {
 }
 
 model YoutubeTranscript {
-  id        Int      @id @default(autoincrement())
+  id   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
