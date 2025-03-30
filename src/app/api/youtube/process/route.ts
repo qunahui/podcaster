@@ -1,8 +1,8 @@
-import prisma from '@/lib/prisma';
-import { translateTranscript, synthesize_segment } from '@/lib/tts';
 import { getAudioDuration } from '@/lib/audio';
-import { getYoutubeId } from '@/utils/getYoutubeId';
+import prisma from '@/lib/prisma';
+import { synthesize_segment, translateTranscript } from '@/lib/tts';
 import { makePublicityGoogleCloudURL } from '@/utils/getPublicictyURL';
+import { getYoutubeId } from '@/utils/getYoutubeId';
 import { NextRequest, NextResponse } from 'next/server';
 import { YoutubeTranscript } from 'youtube-transcript';
 
@@ -22,26 +22,52 @@ const handleFetchTranscript = async (url: string) => {
   return transcriptText;
 };
 
+// Enhanced splitText function for better segment breaks
 const splitText = (text: string, maxBytes: number = 480): string[] => {
-  const delimiters = /([.,!?;:\n]+)/;
-
-  const parts = text.split(delimiters);
+  // Using sentence boundaries for more natural splits
+  const sentenceRegex = /([.!?]\s+|\n+)/g;
+  const sentences = text.split(sentenceRegex).filter(Boolean);
 
   const chunks: string[] = [];
   let chunk = '';
 
-  for (let i = 0; i < parts.length; i += 2) {
-    const sentence = parts[i].trim();
-    const delimiter = i + 1 < parts.length ? parts[i + 1] : '';
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i].trim();
+    if (!sentence) continue;
 
-    if (Buffer.byteLength(chunk + sentence + delimiter, 'utf-8') <= maxBytes) {
-      chunk += sentence + delimiter + ' ';
+    // Check if adding this sentence would exceed the byte limit
+    if (Buffer.byteLength(chunk + sentence, 'utf-8') <= maxBytes) {
+      chunk += sentence + ' ';
     } else {
-      chunks.push(chunk.trim());
-      chunk = sentence + delimiter + ' ';
+      // If the current sentence is very long, we need to split it further
+      if (chunk === '' && Buffer.byteLength(sentence, 'utf-8') > maxBytes) {
+        // Split by words for very long sentences
+        const words = sentence.split(/\s+/);
+        let subChunk = '';
+
+        for (const word of words) {
+          if (Buffer.byteLength(subChunk + word + ' ', 'utf-8') <= maxBytes) {
+            subChunk += word + ' ';
+          } else {
+            if (subChunk) {
+              chunks.push(subChunk.trim());
+            }
+            subChunk = word + ' ';
+          }
+        }
+
+        if (subChunk) {
+          chunk = subChunk;
+        }
+      } else {
+        // Add the current chunk and start a new one with this sentence
+        chunks.push(chunk.trim());
+        chunk = sentence + ' ';
+      }
     }
   }
 
+  // Don't forget the last chunk
   if (chunk.trim()) {
     chunks.push(chunk.trim());
   }
@@ -49,7 +75,14 @@ const splitText = (text: string, maxBytes: number = 480): string[] => {
   return chunks;
 };
 
-const generateM3U8 = (segments: Array<{ id: number; url: string; startTime: number; endTime: number }>): string => {
+const generateM3U8 = (
+  segments: Array<{
+    id: number;
+    url: string;
+    startTime: number;
+    endTime: number;
+  }>
+): string => {
   let m3u8Content = '#EXTM3U\n';
   if (segments.length > 0) {
     m3u8Content += `#EXT-X-MEDIA-SEQUENCE:${segments[0].id}\n`;
@@ -61,9 +94,7 @@ const generateM3U8 = (segments: Array<{ id: number; url: string; startTime: numb
   });
   m3u8Content += '#EXT-X-ENDLIST\n';
   return m3u8Content;
-}
-
-
+};
 
 export const POST = async (req: NextRequest) => {
   const { url } = await req.json();
@@ -134,26 +165,31 @@ export const POST = async (req: NextRequest) => {
     });
     // Filter processed
     const processedSegments = segments.filter((seg) => seg.isProcessed);
-    console.log(processedSegments)
+    console.log(processedSegments);
 
     // If none processed, let's TTS the first TOP_FIRST_SEGMENT = 5
-    const TOP_FIRST_SEGMENT = 5
+    const TOP_FIRST_SEGMENT = 5;
     if (processedSegments.length < TOP_FIRST_SEGMENT) {
-      const firstFive = segments.slice(processedSegments.length, TOP_FIRST_SEGMENT);
+      const firstFive = segments.slice(
+        processedSegments.length,
+        TOP_FIRST_SEGMENT
+      );
       let currentTime = 0;
 
       for (const seg of firstFive) {
         // Synthesize => get GCS URL
-        const audioUrl = await synthesize_segment(seg.transcript, seg.id.toString());
+        const audioUrl = await synthesize_segment(
+          seg.transcript,
+          seg.id.toString()
+        );
 
-        const publicityAudioURL = makePublicityGoogleCloudURL(audioUrl)
+        const publicityAudioURL = makePublicityGoogleCloudURL(audioUrl);
         // Measure duration
         const duration = await getAudioDuration(publicityAudioURL);
 
-        console.log('seg', seg)
-        console.log('currentTime', currentTime)
-        console.log('duration', duration)
-        
+        console.log('seg', seg);
+        console.log('currentTime', currentTime);
+        console.log('duration', duration);
 
         // Update DB
         await prisma.segment.update({
@@ -176,7 +212,7 @@ export const POST = async (req: NextRequest) => {
       orderBy: { id: 'asc' },
     });
 
-    console.log(updatedProcessedSegments)
+    console.log(updatedProcessedSegments);
 
     // Build M3U8 if we have any processed segments
     let m3u8Snippet = '';
