@@ -1,8 +1,8 @@
 import prisma from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import { parseUuid } from '@/utils/uuid';
 
 const DEBUG_PREFIX = '🎵 [AUDIO-PROXY]';
-
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -13,9 +13,15 @@ export async function GET(request: Request) {
     // Handle direct segment ID access
     if (segmentId) {
       console.log(`${DEBUG_PREFIX} Fetching segment by ID:`, segmentId);
+      
+      // Validate UUID format
+      const validUuid = parseUuid(segmentId);
+      if (!validUuid) {
+        return new NextResponse('Invalid segment ID format', { status: 400 });
+      }
 
       const segment = await prisma.segment.findUnique({
-        where: { id: parseInt(segmentId) },
+        where: { id: validUuid },
         include: { video: true },
       });
 

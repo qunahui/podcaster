@@ -1,3 +1,4 @@
+// src/app/api/youtube/process/next-segments/route.ts
 import { getAudioDuration } from '@/lib/audio';
 import prisma from '@/lib/prisma';
 import { synthesize_segment } from '@/lib/tts';
@@ -7,7 +8,7 @@ import { NextResponse } from 'next/server';
 const DEBUG_PREFIX = '🎵 [NEXT-SEGMENTS]';
 
 // Helper function to convert segment to proxied URL
-function getProxiedUrl(segment: { url: string; id: number }): string {
+function getProxiedUrl(segment: { url: string; id: string }): string {
   // Ensure we have a full URL with domain
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || '';
 
@@ -17,13 +18,13 @@ function getProxiedUrl(segment: { url: string; id: number }): string {
   const protocol = host.startsWith('localhost') ? 'http' : 'https';
   const fullBaseUrl = baseUrl || `${protocol}://${host}`;
 
-  // Use segment ID instead of direct URL to ensure we always go through the proxy
+  // Use segment UUID instead of direct URL to ensure we always go through the proxy
   return `${fullBaseUrl}/api/youtube/audio-proxy?segmentId=${segment.id}`;
 }
 
 const generateM3U8 = (
   segments: Array<{
-    id: number;
+    id: string;
     url: string;
     startTime: number;
     endTime: number;
@@ -35,12 +36,8 @@ const generateM3U8 = (
   m3u8Content += '#EXT-X-ALLOW-CACHE:NO\n'; // Prevent caching
   m3u8Content += '#EXT-X-PLAYLIST-TYPE:EVENT\n'; // Allow updates
   m3u8Content += '#EXT-X-TARGETDURATION:30\n';
-  // Use the first segment's ID as the media sequence number
-  if (segments.length > 0) {
-    m3u8Content += `#EXT-X-MEDIA-SEQUENCE:${segments[0].id}\n`;
-  } else {
-    m3u8Content += '#EXT-X-MEDIA-SEQUENCE:0\n';
-  }
+  // Use media sequence 0 since we're using UUIDs
+  m3u8Content += '#EXT-X-MEDIA-SEQUENCE:0\n';
 
   segments.forEach((seg) => {
     const duration = seg.endTime - seg.startTime;
@@ -84,7 +81,7 @@ export async function POST(request: Request) {
       where: { youtubeVideoId: youtubeId },
       include: {
         segments: {
-          orderBy: { id: 'asc' },
+          orderBy: { startTime: 'asc' },
         },
       },
     });
@@ -293,4 +290,3 @@ export async function POST(request: Request) {
     console.error(`${DEBUG_PREFIX} Error processing next segments:`, error);
     return new NextResponse('Internal Server Error', { status: 500 });
   }
-}

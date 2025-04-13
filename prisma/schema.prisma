@@ -9,36 +9,27 @@ datasource db {
 }
 
 model Video {
-  id   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  
-  youtubeVideoId          String    @unique
-  processedIndexCharacter Int      @default(0)
-
-  segments                Segment[]
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
-
-  @@map("videos")
+  id             String    @id @default(uuid()) @db.Uuid
+  youtubeVideoId String    @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  processedIndexCharacter Int       @default(0)
+  segments       Segment[]
 }
 
 model Segment {
-  id   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          String   @id @default(uuid()) @db.Uuid
+  videoId     String   @db.Uuid
+  video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  startTime   Float    @default(0)
+  endTime     Float    @default(0)
+  transcript  String   @default("")
+  url         String   @default("")
+  isProcessed Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   
-  videoId   String @db.Uuid
-  video     Video    @relation(fields: [videoId], references: [id])
-  
-  startTime Float
-  endTime   Float  
-  url       String
-
-  transcript              String    @db.Uuid
-  isProcessed             Boolean   @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
   @@index([videoId])
-  @@map("segments")
 }
 
 model YoutubeTranscript {

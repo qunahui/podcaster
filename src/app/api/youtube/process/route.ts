@@ -1,3 +1,4 @@
+// src/app/api/youtube/process/route.ts
 import { getAudioDuration } from '@/lib/audio';
 import prisma from '@/lib/prisma';
 import { synthesize_segment, translateTranscript } from '@/lib/tts';
@@ -5,6 +6,7 @@ import { makePublicityGoogleCloudURL } from '@/utils/getPublicictyURL';
 import { getYoutubeId } from '@/utils/getYoutubeId';
 import { NextRequest, NextResponse } from 'next/server';
 import { YoutubeTranscript } from 'youtube-transcript';
+import { generateUuid } from '@/utils/uuid';
 
 const handleFetchTranscript = async (url: string) => {
   const videoId = YoutubeTranscript['retrieveVideoId'](url);
@@ -77,16 +79,17 @@ const splitText = (text: string, maxBytes: number = 480): string[] => {
 
 const generateM3U8 = (
   segments: Array<{
-    id: number;
+    id: string;
     url: string;
     startTime: number;
     endTime: number;
   }>
 ): string => {
   let m3u8Content = '#EXTM3U\n';
-  if (segments.length > 0) {
-    m3u8Content += `#EXT-X-MEDIA-SEQUENCE:${segments[0].id}\n`;
-  }
+  
+  // Use sequence number 0 as we're working with UUIDs now
+  m3u8Content += '#EXT-X-MEDIA-SEQUENCE:0\n';
+  
   segments.forEach((seg) => {
     const duration = seg.endTime - seg.startTime;
     m3u8Content += `#EXTINF:${duration.toFixed(2)},\n`;
@@ -123,31 +126,26 @@ export const POST = async (req: NextRequest) => {
 
       const splitTranscript = splitText(translatedTranscript);
 
+      // Create segments with UUID ids
+      const segmentsToCreate = splitTranscript.map((transcript) => ({
+        id: generateUuid(),
+        url: '',
+        transcript,
+        startTime: 0,
+        endTime: 0,
+      }));
+
       const createdVideo = await prisma.video.create({
         data: {
           youtubeVideoId: getYoutubeId(url),
           segments: {
-            create: splitTranscript.map((transcript) => ({
-              url: '',
-              transcript,
-              startTime: 0,
-              endTime: 0,
-            })),
+            create: segmentsToCreate,
           },
         },
         include: {
           segments: true,
         },
       });
-
-      // return NextResponse.json(
-      //   {
-      //     transcript: createdVideo.segments
-      //       .map((segment) => segment.transcript)
-      //       .join(' '),
-      //   },
-      //   { status: 200 }
-      // );
 
       // Now treat it the same as an "existing" video
       video = createdVideo;
@@ -161,7 +159,7 @@ export const POST = async (req: NextRequest) => {
     // (or we could use video.segments if we included them above)
     const segments = await prisma.segment.findMany({
       where: { videoId: video.id },
-      orderBy: { id: 'asc' },
+      orderBy: { startTime: 'asc' },
     });
     // Filter processed
     const processedSegments = segments.filter((seg) => seg.isProcessed);
@@ -209,7 +207,7 @@ export const POST = async (req: NextRequest) => {
     // Now gather processed segments again
     const updatedProcessedSegments = await prisma.segment.findMany({
       where: { videoId: video.id, isProcessed: true },
-      orderBy: { id: 'asc' },
+      orderBy: { startTime: 'asc' },
     });
 
     console.log(updatedProcessedSegments);
@@ -230,15 +228,6 @@ export const POST = async (req: NextRequest) => {
       transcript: combinedTranscript,
       m3u8Snippet: m3u8Snippet || 'No processed segments yet',
     });
-
-    // return NextResponse.json(
-    //   {
-    //     transcript: video.segments
-    //       .map((segment) => segment.transcript)
-    //       .join(' '),
-    //   },
-    //   { status: 200 }
-    // );
   } catch (e: unknown) {
     console.log('======> ', e);
     return NextResponse.json(

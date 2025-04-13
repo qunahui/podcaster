@@ -30,7 +30,7 @@ export async function GET(request: Request) {
       where: { youtubeVideoId: youtubeId },
       include: {
         segments: {
-          orderBy: { id: 'asc' },
+          orderBy: { startTime: 'asc' },
         },
       },
     });

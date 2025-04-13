@@ -2,7 +2,7 @@
 import { Segment } from '@prisma/client';
 
 interface ProxiedSegment {
-  id: number;
+  id: string;
   startTime: number;
   endTime: number;
   url: string;
@@ -13,7 +13,7 @@ interface ProxiedSegment {
  * Convert direct GCS URLs to proxied URLs for HLS playback
  */
 export const getProxiedUrl = (
-  segment: { url: string; id: number },
+  segment: { url: string; id: string },
   baseUrl?: string
 ): string => {
   // Ensure we have a full URL with domain
@@ -22,7 +22,7 @@ export const getProxiedUrl = (
       ? window.location.origin
       : baseUrl || process.env.NEXT_PUBLIC_BASE_URL || '';
 
-  // Use segment ID instead of direct URL to ensure we always go through the proxy
+  // Use segment UUID instead of direct URL to ensure we always go through the proxy
   return `${host}/api/youtube/audio-proxy?segmentId=${segment.id}`;
 };
 
@@ -31,7 +31,7 @@ export const getProxiedUrl = (
  */
 export const generateM3U8 = (
   segments: Array<{
-    id: number;
+    id: string;
     url: string;
     startTime: number;
     endTime: number;
@@ -54,10 +54,10 @@ export const generateM3U8 = (
   );
   m3u8Content += `#EXT-X-TARGETDURATION:${Math.ceil(maxDuration) + 1}\n`;
 
-  // Use the first segment's ID as the media sequence number
-  m3u8Content += `#EXT-X-MEDIA-SEQUENCE:${segments[0].id}\n`;
+  // Use sequence number based on index for media sequence
+  m3u8Content += `#EXT-X-MEDIA-SEQUENCE:0\n`;
 
-  segments.forEach((seg) => {
+  segments.forEach((seg, index) => {
     const duration = seg.endTime - seg.startTime;
     const proxiedUrl = getProxiedUrl(
       {
